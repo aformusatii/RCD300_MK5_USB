@@ -11,12 +11,12 @@ Includes
 #include <string.h>
 #include <util/delay.h>
 
-#include "../atmega8/mtimer.h"
+#include "../atmega328/mtimer.h"
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
-#include "../atmega8/usart.h"
+#include "../atmega328/usart.h"
 
 #ifdef	__cplusplus
 }
