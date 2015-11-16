@@ -2,10 +2,9 @@
 Includes
 ********************************************************************************/
 
+#include <avr/io.h>
 #include <avr/interrupt.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <avr/sleep.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,68 +21,41 @@ extern "C" {
 }
 #endif
 
-#define _NOP() do { __asm__ __volatile__ ("nop"); } while (0)
-
 /********************************************************************************
 	Macros and Defines
 ********************************************************************************/
-#define CONSOLE_PREFIX "\natmega328>"
+#define BUTTON_SET_0_PRESSED_FLAG  0
+#define BUTTON_SET_1_PRESSED_FLAG  1
+#define MP3_ENABLED_FLAG           2
+#define BUTTON_PRESSED_MAX_COUNT  10
 
-#define _in(bit,port)	port &= ~(1 << bit)
-#define _out(bit,port)	port |= (1 << bit)
-#define _on(bit,port)	port |= (1 << bit)
-#define _off(bit,port)	port &= ~(1 << bit)
-
-#define _to_uint64(x,y) ((uint64_t) x << 16) | y
-
-#define GET_REG1_FLAG(bit) (1 << bit) & reg1_flags
-#define SET_REG1_FLAG(bit) reg1_flags |= (1 << bit)
-#define CLR_REG1_FLAG(bit) reg1_flags &= ~(1 << bit)
-
-#define UART_CMD_RECEIVED  0
-#define UNSUPPORTED_CMD_RECEIVED  1
-#define RF24_RECEIVER_ENABLED  2
+#define SWITCH_ON_MP3 _on(PB0, PORTB)
+#define SWITCH_OFF_MP3 _off(PB0, PORTB)
 
 /********************************************************************************
 	Function Prototypes
 ********************************************************************************/
-
+uint16_t adc_read(uint8_t adcx);
+void handle_button_set_0();
+void handle_button_set_1();
 
 /********************************************************************************
 	Global Variables
 ********************************************************************************/
+volatile uint8_t gen_flag_register = 0;
 
-volatile uint8_t usart_cmd_buffer[255];
-volatile uint8_t usart_cmd_buffer_count = 0;
+volatile uint8_t button_set_0_count = 0;
+volatile uint32_t button_set_0_value = 0;
 
-volatile uint8_t reg1_flags = 0;
-
-volatile uint64_t endJob1Cicles = 0;
-volatile uint16_t job1Seconds = 60;
-
-volatile uint64_t endJob2Cicles = 0;
-volatile uint16_t job2Seconds = 10;
-
-volatile uint8_t red_pwd = 1;
-volatile uint8_t green_pwd = 1;
-volatile uint8_t blue_pwd = 1;
+volatile uint8_t button_set_1_count = 0;
+volatile uint32_t button_set_1_value = 0;
 
 /********************************************************************************
 	Interrupt Service
 ********************************************************************************/
-
 ISR(USART_RX_vect)
 {
-	uint8_t usart_data = UDR0;
-
-	switch (usart_data) {
-		case 00:
-			SET_REG1_FLAG(UART_CMD_RECEIVED);
-			break;
-
-		default:
-			usart_cmd_buffer[usart_cmd_buffer_count++] = usart_data;
-	}
+	handle_usart_interrupt();
 }
 
 ISR(TIMER1_OVF_vect)
@@ -91,134 +63,263 @@ ISR(TIMER1_OVF_vect)
 	incrementOvf();
 }
 
-ISR(TIMER0_OVF_vect)
+ISR(INT0_vect)
 {
-	TCCR0A = 0
-	    |(1<<COM0A1)    // Bits 7:6 – COM0A1:0: Set OC0A on Compare Match
-	    |(1<<COM0A0)    //
-	    |(1<<COM0B1)    // Bits 5:4 – COM0B1:0: Set OC0B on Compare Match
-	    |(1<<COM0B0)
-	    |(0<<WGM01)     // Bits 1:0 – WGM01:0: Normal
-	    |(0<<WGM00)
-	    ;
-
-	TCNT0 = 0;
-
-	_NOP();
-
-	TCCR0B |= (1<<FOC0A)|(1<<FOC0B); // Force Output Compare
-
-	TCCR0A = 0
-	    |(1<<COM0A1)    // Bits 7:6 – COM0A1:0: Clear OC0A on Compare Match
-	    |(0<<COM0A0)    //
-	    |(1<<COM0B1)    // Bits 5:4 – COM0B1:0: Clear OC0B on Compare Match
-	    |(0<<COM0B0)
-	    |(0<<WGM01)     // Bits 1:0 – WGM01:0: Normal
-	    |(0<<WGM00)
-	    ;
-}
-
-ISR(TIMER2_OVF_vect)
-{
-	TCCR2A = 0
-	    |(0<<COM2A1)    // Bits 7:6 – COM2A1:0: Normal port operation, OC2A disconnected.
-	    |(0<<COM2A0)    //
-	    |(1<<COM2B1)    // Bits 5:4 – COM2B1:0: Set OC2B on Compare Match
-	    |(1<<COM2B0)
-	    |(0<<WGM21)     // Bits 1:0 – WGM21:0: Normal
-	    |(0<<WGM20)
-	    ;
-
-	TCNT2 = 0;
-
-	TCCR2B |= (1<<FOC2A)|(1<<FOC2B); // Force Output Compare
-
-	TCCR2A = 0
-		|(0<<COM2A1)    // Bits 7:6 – COM2A1:0: Normal port operation, OC2A disconnected.
-		|(0<<COM2A0)    //
-	    |(1<<COM2B1)    // Bits 5:4 – COM2B1:0: Clear OC2B on Compare Match
-	    |(0<<COM2B0)
-	    |(0<<WGM21)     // Bits 1:0 – WGM21:0: Normal
-	    |(0<<WGM20)
-	    ;
+	//printf("\n%i", index++);
 }
 
 /********************************************************************************
 	Main
 ********************************************************************************/
 int main(void) {
+
     // initialize code
 	usart_init();
 
     // enable interrupts
     sei();
 
-    // Init  IO
-	_out(DDC0, DDRC); //
-	_out(DDC1, DDRC); //
-	_out(DDC2, DDRC); //
-
-	_out(DDD3, DDRD); // OC2B
-	_out(DDD5, DDRD); // OC0B
-	_out(DDD6, DDRD); // OC0A
-
-	_on(PD3, PORTD); // OC2B
-	_on(PD5, PORTD); // OC0B
-	_on(PD6, PORTD); // OC0A
-
     // Init timer1
     initTimer();
+
+    // Init GPIO
+    _in(DDC0, DDRC); // Analog input 0
+    _in(DDC1, DDRC); // Analog input 1
+    _in(DDD2, DDRD); // INT0 input
+    _out(DDB0, DDRB); // OUT Control 12V MP3
+
+    _in(DDC2, DDRC); // Input
+    _in(DDC3, DDRC); // Input
+    _in(DDC4, DDRC); // Input
+    _in(DDC5, DDRC); // Input
+
+    PORTC = 0;
+
+    SWITCH_OFF_MP3;
+
+    // GPIO Interrupt
+    EICRA = (0<<ISC11)|(0<<ISC10)|(1<<ISC01)|(1<<ISC00);
+    EIMSK = (0<<INT1)|(1<<INT0);
+
+    // Configure Sleep Mode
+    SMCR = (0<<SM2)|(1<<SM1)|(0<<SM0)|(0<<SE);
+
+    // Enable the ADC
+    ADCSRA |= _BV(ADEN);
 
 	// Output initialization log
     printf("Start ATMEGA328.");
     printf(CONSOLE_PREFIX);
 
-    printf("Start NRF24L01P test...");
-
-    // init job1
-    //endJob1Cicles = convertSecondsToCicles(job1Seconds);
-    endJob1Cicles = 0;
-
 	// main loop
     while (1) {
+    	// main usart loop
+    	usart_check_loop();
 
-    	/**
-    	 * --------> USART Command received.
-    	 */
-    	if (GET_REG1_FLAG(UART_CMD_RECEIVED)) {
-    		if (usart_cmd_buffer_count == 3) {
-    			OCR0B = usart_cmd_buffer[0];
-    			OCR2B = usart_cmd_buffer[1];
-    			OCR0A = usart_cmd_buffer[2];
+    	handle_button_set_0();
+
+    	handle_button_set_1();
+
+    	if ((GET_REG1_FLAG(PIND, PD2)) == 0) {
+    		SWITCH_OFF_MP3;
+
+    		debug_print("\n bye");
+    		sleep_enable();
+    		sleep_cpu();
+    		sleep_disable();
+    		debug_print("\n Hi!");
+
+    		if (GET_REG1_FLAG(gen_flag_register, MP3_ENABLED_FLAG)) {
+    			SWITCH_ON_MP3;
     		}
-
-			usart_cmd_buffer_count = 0;
-    		CLR_REG1_FLAG(UART_CMD_RECEIVED);
-    	}
-
-    	uint64_t currentTimeCicles = getCurrentTimeCicles();
-
-    	/**
-    	 * --------> Job 1 (Send data to server)
-    	 */
-    	if ((endJob1Cicles != 0) && (currentTimeCicles >= endJob1Cicles)) {
-    		endJob1Cicles = convertSecondsToCicles(job1Seconds);
-    		endJob2Cicles = convertSecondsToCicles(job2Seconds);
-
-    		printf("\n job 1 execute");
-
-    		SET_REG1_FLAG(RF24_RECEIVER_ENABLED);
-    	}
-
-    	/**
-    	 * --------> Job 2 (Stop Receiving data from Server)
-    	 */
-    	if ((endJob2Cicles != 0) && (currentTimeCicles >= endJob2Cicles)) {
-    		endJob2Cicles = 0;
-    		CLR_REG1_FLAG(RF24_RECEIVER_ENABLED);
-
-    		printf("\n job 2 execute");
     	}
 
     }
+}
+
+/********************************************************************************
+	Functions
+********************************************************************************/
+void handle_usart_cmd(char *cmd, char *args) {
+
+	if (strcmp(cmd, "test") == 0) {
+		printf("\n TEST [%s]", args);
+	}
+
+	else if (strcmp(cmd, "timer") == 0) {
+		//uint16_t value = atoi(args);
+	}
+
+	else if (strcmp(cmd, "adc") == 0) {
+		printf("\n ADS [%u]", adc_read(MUX0));
+	}
+
+	else if (strcmp(cmd, "sleep") == 0) {
+		printf("\n bye");
+		sleep_enable();
+		sleep_cpu();
+		sleep_disable();
+		printf("\n Hi!");
+	}
+
+	else if (strcmp(cmd, "pb0_on") == 0) {
+		SWITCH_ON_MP3;
+		SET_REG1_FLAG(gen_flag_register, MP3_ENABLED_FLAG);
+	}
+
+	else if (strcmp(cmd, "pb0_off") == 0) {
+		SWITCH_OFF_MP3;
+		CLR_REG1_FLAG(gen_flag_register, MP3_ENABLED_FLAG);
+	}
+
+	else if (strcmp(cmd, "pb0") == 0) {
+		if (GET_REG1_FLAG(PORTB, PB0)) {
+    		SWITCH_OFF_MP3;
+    		CLR_REG1_FLAG(gen_flag_register, MP3_ENABLED_FLAG);
+		} else {
+    		SWITCH_ON_MP3;
+    		SET_REG1_FLAG(gen_flag_register, MP3_ENABLED_FLAG);
+		}
+	}
+
+	else {
+		printf("\n unknown [%s][%s]", cmd, args);
+	}
+}
+
+void handle_button_set_0() {
+	uint16_t mux0Value = adc_read(MUX0);
+
+	if (mux0Value > 220) {
+		if (GET_REG1_FLAG(gen_flag_register, BUTTON_SET_0_PRESSED_FLAG)) {
+	    	if (_between(button_set_0_value, 604)) { // 543 CD
+
+	    		if (GET_REG1_FLAG(PORTB, PB0)) {
+		    		SWITCH_OFF_MP3;
+		    		CLR_REG1_FLAG(gen_flag_register, MP3_ENABLED_FLAG);
+	    		} else {
+		    		SWITCH_ON_MP3;
+		    		SET_REG1_FLAG(gen_flag_register, MP3_ENABLED_FLAG);
+	    		}
+
+	    		button_set_0_value = 0;
+
+	    		debug_print("\n PRESS 1 [%lu]", button_set_0_value);
+	    	}
+
+	    	else if (_between(button_set_0_value, 440)) { // Channel 1
+	    		debug_print("\n PRESS 2 [%lu]", button_set_0_value);
+	    	}
+
+	    	else if (_between(button_set_0_value, 312)) { // Channel 2
+	    		debug_print("\n PRESS 3 [%lu]", button_set_0_value);
+	    	}
+
+	    	else if (_between(button_set_0_value, 231)) { // Channel 3
+	    		debug_print("\n PRESS 4 [%lu]", button_set_0_value);
+	    	}
+
+	    	else {
+	    		debug_print("\n UNKNOWN [%lu]", button_set_0_value);
+	    	}
+		} else {
+			if (button_set_0_count >= BUTTON_PRESSED_MAX_COUNT) {
+				SET_REG1_FLAG(gen_flag_register, BUTTON_SET_0_PRESSED_FLAG);
+				button_set_0_value = mux0Value;
+				button_set_0_count = 0;
+			} else {
+				button_set_0_count++;
+			}
+		}
+	} else if(GET_REG1_FLAG(gen_flag_register, BUTTON_SET_0_PRESSED_FLAG)) {
+		CLR_REG1_FLAG(gen_flag_register, BUTTON_SET_0_PRESSED_FLAG);
+		debug_print("\n -> END <-");
+		button_set_0_value = 0;
+	}
+}
+
+void handle_button_set_1() {
+	uint16_t mux1Value = adc_read(MUX1);
+
+	if (mux1Value > 100) {
+		if (GET_REG1_FLAG(gen_flag_register, BUTTON_SET_1_PRESSED_FLAG)) {
+			if (_between(button_set_1_value, 543)) { // 543 CD
+				_out(DDC4, DDRC);
+				debug_print("\n PRESS 1 [%lu]", button_set_1_value);
+			}
+
+			else if (_between(button_set_1_value, 352)) { // 352 PREV
+				_out(DDC5, DDRC);
+				debug_print("\n PRESS 2 [%lu]", button_set_1_value);
+			}
+
+			else if (_between(button_set_1_value, 271)) { // 271 NEXT
+				_out(DDC3, DDRC);
+				debug_print("\n PRESS 3 [%lu]", button_set_1_value);
+			}
+
+			else if (_between(button_set_1_value, 240)) { // 240 MENU
+				_out(DDC2, DDRC);
+				debug_print("\n PRESS 4 [%lu]", button_set_1_value);
+			}
+
+			else if (_between(button_set_1_value, 184)) { // 184 FM
+				debug_print("\n PRESS 5 [%lu]", button_set_1_value);
+			}
+
+			else if (_between(button_set_1_value, 206)) { // 206 AM
+				debug_print("\n PRESS 6 [%lu]", button_set_1_value);
+			}
+
+			else if (_between(button_set_1_value, 224)) { // 224 AS
+				debug_print("\n PRESS 7 [%lu]", button_set_1_value);
+			}
+
+			else {
+				debug_print("\n UNKNOWN [%lu]", button_set_1_value);
+			}
+		} else {
+			if (button_set_1_count >= BUTTON_PRESSED_MAX_COUNT) {
+				SET_REG1_FLAG(gen_flag_register, BUTTON_SET_1_PRESSED_FLAG);
+				button_set_1_value = mux1Value;
+				button_set_1_count = 0;
+			} else {
+				button_set_1_count++;
+			}
+		}
+	} else if (GET_REG1_FLAG(gen_flag_register, BUTTON_SET_1_PRESSED_FLAG)) {
+		CLR_REG1_FLAG(gen_flag_register, BUTTON_SET_1_PRESSED_FLAG);
+		_in(DDC5, DDRC);
+		_in(DDC4, DDRC);
+		_in(DDC3, DDRC);
+		_in(DDC2, DDRC);
+		button_set_1_value = 0;
+
+		debug_print("\n -> END <-");
+	}
+}
+
+uint16_t adc_read(uint8_t adcx) {
+	/* adcx is the analog pin we want to use.  ADMUX's first few bits are
+	 * the binary representations of the numbers of the pins so we can
+	 * just 'OR' the pin's number with ADMUX to select that pin.
+	 * We first zero the four bits by setting ADMUX equal to its higher
+	 * four bits. */
+	ADMUX = adcx;
+	ADMUX |= (0<<REFS1)|(1<<REFS0)|(0<<ADLAR);
+
+	_delay_us(300);
+
+	/* This starts the conversion. */
+	ADCSRA |= _BV(ADSC);
+
+	/* This is an idle loop that just wait around until the conversion
+	 * is finished.  It constantly checks ADCSRA's ADSC bit, which we just
+	 * set above, to see if it is still set.  This bit is automatically
+	 * reset (zeroed) when the conversion is ready so if we do this in
+	 * a loop the loop will just go until the conversion is ready. */
+	while ( (ADCSRA & _BV(ADSC)) );
+
+	/* Finally, we return the converted value to the calling function. */
+	return ADC;
 }
