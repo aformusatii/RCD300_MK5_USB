@@ -192,7 +192,7 @@ void handle_button_set_0() {
 
 	if (mux0Value > 220) {
 		if (GET_REG1_FLAG(gen_flag_register, BUTTON_SET_0_PRESSED_FLAG)) {
-	    	if (_between(button_set_0_value, 604)) { // 543 CD
+	    	if ( (button_set_0_value > 501) & (button_set_0_value < 800) ) { // 604 MIX
 
 	    		if (GET_REG1_FLAG(PORTB, PB0)) {
 		    		SWITCH_OFF_MP3;
@@ -202,20 +202,19 @@ void handle_button_set_0() {
 		    		SET_REG1_FLAG(gen_flag_register, MP3_ENABLED_FLAG);
 	    		}
 
-	    		button_set_0_value = 0;
-
 	    		debug_print("\n PRESS 1 [%lu]", button_set_0_value);
+	    		button_set_0_value = 0;
 	    	}
 
-	    	else if (_between(button_set_0_value, 440)) { // Channel 1
+	    	else if ( (button_set_0_value > 401) & (button_set_0_value < 500) ) { // Channel 1 {448}
 	    		debug_print("\n PRESS 2 [%lu]", button_set_0_value);
 	    	}
 
-	    	else if (_between(button_set_0_value, 312)) { // Channel 2
+	    	else if ( (button_set_0_value > 281) & (button_set_0_value < 400) ) { // Channel 2 {305, 312}
 	    		debug_print("\n PRESS 3 [%lu]", button_set_0_value);
 	    	}
 
-	    	else if (_between(button_set_0_value, 231)) { // Channel 3
+	    	else if ( (button_set_0_value > 220) & (button_set_0_value < 280) ) { // Channel 3 {227, 231}
 	    		debug_print("\n PRESS 4 [%lu]", button_set_0_value);
 	    	}
 
@@ -243,36 +242,40 @@ void handle_button_set_1() {
 
 	if (mux1Value > 100) {
 		if (GET_REG1_FLAG(gen_flag_register, BUTTON_SET_1_PRESSED_FLAG)) {
-			if (_between(button_set_1_value, 543)) { // 543 CD
+			if ( (button_set_1_value > 401) & (button_set_1_value < 600) ) { // 551 CD |547
 				_out(DDC4, DDRC);
 				debug_print("\n PRESS 1 [%lu]", button_set_1_value);
 			}
 
-			else if (_between(button_set_1_value, 352)) { // 352 PREV
+			else if ( (button_set_1_value > 301) & (button_set_1_value < 400) ) { // 352 PREV
 				_out(DDC5, DDRC);
 				debug_print("\n PRESS 2 [%lu]", button_set_1_value);
 			}
 
-			else if (_between(button_set_1_value, 271)) { // 271 NEXT
+			else if ( (button_set_1_value > 201) & (button_set_1_value < 300) ) { // 271 NEXT
 				_out(DDC3, DDRC);
 				debug_print("\n PRESS 3 [%lu]", button_set_1_value);
 			}
 
-			else if (_between(button_set_1_value, 240)) { // 240 MENU
-				_out(DDC2, DDRC);
+			/*
+
+			else if ( (button_set_1_value > 220) & (button_set_1_value < 250) ) { // 240 MENU
 				debug_print("\n PRESS 4 [%lu]", button_set_1_value);
 			}
 
-			else if (_between(button_set_1_value, 184)) { // 184 FM
-				debug_print("\n PRESS 5 [%lu]", button_set_1_value);
+			else if ( (button_set_1_value > 201) & (button_set_1_value < 230) ) { // 224 AS
+				debug_print("\n PRESS 7 [%lu]", button_set_1_value);
 			}
 
 			else if (_between(button_set_1_value, 206)) { // 206 AM
 				debug_print("\n PRESS 6 [%lu]", button_set_1_value);
 			}
 
-			else if (_between(button_set_1_value, 224)) { // 224 AS
-				debug_print("\n PRESS 7 [%lu]", button_set_1_value);
+			*/
+
+			else if ( (button_set_1_value > 160 ) & (button_set_1_value < 200) ) { // 184 FM
+				_out(DDC2, DDRC);
+				debug_print("\n PRESS 5 [%lu]", button_set_1_value);
 			}
 
 			else {

@@ -18,7 +18,7 @@
 
 #define _between(actual,expected) (actual > (expected - 8)) & (actual < (expected + 8))
 
-#define CONSOLE_DEBUG 0
+#define CONSOLE_DEBUG 1
 
 #if CONSOLE_DEBUG == 1
 #define debug_print(...) \
